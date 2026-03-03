@@ -2,16 +2,19 @@
 namespace App\Http\Controllers;
 
 use App\Services\OllamaService;
+use App\Services\SchemaService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class AIController extends Controller
 {
     protected $ollama;
+    protected $schemaService;
 
-    public function __construct(OllamaService $ollama)
+    public function __construct(OllamaService $ollama, SchemaService $schemaService)
     {
-        $this->ollama = $ollama;
+        $this->ollama        = $ollama;
+        $this->schemaService = $schemaService;
     }
 
     public function ask(Request $request)
@@ -22,73 +25,73 @@ class AIController extends Controller
         ]);
 
         $question = $request->input('question');
+        $schema   = $this->schemaService->getFormattedSchema();
 
-        // ✅ Real Database Schema (MATCHES YOUR DB)
-        $schema = "
-                Tables:
-
-                members(
-                    id INT,
-                    name VARCHAR,
-                    status VARCHAR,
-                    created_at DATETIME,
-                    updated_at DATETIME
-                )
-
-                payments(
-                    id INT,
-                    member_id INT,
-                    amount DECIMAL,
-                    payment_date DATE,
-                    created_at DATETIME,
-                    updated_at DATETIME
-                )
-
-                tickets(
-                    id INT,
-                    title VARCHAR,
-                    status VARCHAR,
-                    created_at DATETIME,
-                    updated_at DATETIME
-                )
-                ";
-
+        // ✅ Single AI Call Prompt (SQL + Explanation)
         $prompt = "
-                You are an expert MySQL query generator.
+                You are an AI Business Intelligence engine.
 
-                Rules:
-                - Use MySQL syntax only.
-                - Use CURDATE() for today's date.
-                - payment_date is DATE type.
-                - created_at is DATETIME.
-                - If the question asks to modify, delete, update, insert, or change data,
-                respond exactly with: NOT_ALLOWED
-                - Otherwise generate SELECT query.
-                - Never use columns that are not listed.
-                - No explanation.
+                Return ONLY valid JSON in this exact structure:
+
+                {
+                \"sql\": \"<mysql_select_query>\",
+                \"explanation\": \"<professional_business_explanation>\"
+                }
+
+                STRICT RULES:
+                - Only generate SELECT queries.
+                - Never generate INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE, CREATE.
+                - If modification is requested, return:
+                {\"sql\":\"NOT_ALLOWED\",\"explanation\":\"Operation not permitted.\"}
+                - Use only tables and columns from schema.
                 - No markdown.
                 - No backticks.
-                - Return plain SQL only.
+                - No extra commentary.
+                - Valid JSON only.
 
                 Database schema:
                 $schema
 
-                Question: $question
+                User question:
+                $question
                 ";
 
-        // ✅ Ask AI
-        $sql = $this->ollama->ask($prompt);
+        // ✅ Ask AI (Single Call)
+        $response = $this->ollama->ask($prompt);
 
-        if (empty($sql)) {
+        if (empty($response)) {
             return response()->json([
-                'error' => 'AI did not return SQL.',
-            ], 400);
+                'error' => 'AI did not return a response.',
+            ], 500);
         }
 
-        // ✅ Clean AI output
-        $sql = trim($sql);
-        $sql = str_replace(['```sql', '```'], '', $sql);
-        $sql = trim($sql);
+        // ✅ Decode JSON
+        $data = json_decode(trim($response), true);
+
+        if (! $data || ! isset($data['sql'])) {
+            return response()->json([
+                'error' => 'Invalid AI response format.',
+                'raw'   => $response,
+            ], 500);
+        }
+
+        $sql         = trim($data['sql']);
+        $explanation = $data['explanation'] ?? null;
+        $data        = json_decode(trim($response), true);
+
+        // dd([
+        //     'raw_ai_response' => $response,
+        //     'decoded_data'    => $data,
+        //     'sql'             => $data['sql'] ?? null,
+        //     'explanation'     => $data['explanation'] ?? null,
+        // ]);
+
+        // ✅ Handle NOT_ALLOWED
+        if ($sql === 'NOT_ALLOWED') {
+            return response()->json([
+                'error' => 'Operation not permitted.',
+            ], 400);
+        }
 
         // ✅ Allow ONLY SELECT queries
         if (! str_starts_with(strtolower($sql), 'select')) {
@@ -115,38 +118,42 @@ class AIController extends Controller
         foreach ($forbidden as $word) {
             if (str_contains(strtolower($sql), $word)) {
                 return response()->json([
-                    'error' => 'I am not allowed to perform this operation.',
+                    'error' => 'Forbidden SQL operation detected.',
                     'sql'   => $sql,
                 ], 400);
             }
         }
 
-        // ✅ Execute Query Safely
+        // ✅ Execute Query
         try {
             $result = DB::select($sql);
         } catch (\Exception $e) {
             return response()->json([
-                'error'   => 'Database error',
+                'error'   => 'Database error.',
                 'message' => $e->getMessage(),
                 'sql'     => $sql,
             ], 500);
         }
 
-        // ✅ Normalize Aggregate Output
+        // ✅ Aggregate Detection
         if (count($result) === 1 && count((array) $result[0]) === 1) {
+
             $value = array_values((array) $result[0])[0];
 
             return response()->json([
-                'sql'   => $sql,
-                'type'  => 'aggregate',
-                'value' => $value,
+                'sql'         => $sql,
+                'type'        => 'aggregate',
+                'value'       => $value,
+                'explanation' => $explanation,
             ]);
         }
 
+        // ✅ Table Result
         return response()->json([
-            'sql'  => $sql,
-            'type' => 'table',
-            'data' => $result,
+            'sql'         => $sql,
+            'type'        => 'table',
+            'data'        => $result,
+            'explanation' => $explanation,
         ]);
     }
 }
