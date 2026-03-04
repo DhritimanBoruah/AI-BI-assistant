@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 use App\Services\OllamaService;
 use App\Services\SchemaService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class AIController extends Controller
@@ -25,7 +26,21 @@ class AIController extends Controller
         ]);
 
         $question = $request->input('question');
-        $schema   = $this->schemaService->getFormattedSchema();
+
+        // ✅ Redis caching key-----------------------------------------------------
+
+        $cacheKey = 'ai_question_' . md5($question);
+
+        if (Cache::has($cacheKey)) {
+            return response()->json([
+                'source' => 'cache',
+                'data'   => Cache::get($cacheKey),
+            ]);
+        }
+
+        // ✅ Redis caching key end -------------------------------------------------
+
+        $schema = $this->schemaService->getFormattedSchema();
 
         // ✅ Single AI Call Prompt (SQL + Explanation)
         $prompt = "
@@ -61,7 +76,7 @@ class AIController extends Controller
 
         if (empty($response)) {
             return response()->json([
-                'error' => 'AI did not return a response.',
+                'error' => 'AI did not return a response. Please try Again.',
             ], 500);
         }
 
@@ -78,13 +93,6 @@ class AIController extends Controller
         $sql         = trim($data['sql']);
         $explanation = $data['explanation'] ?? null;
         $data        = json_decode(trim($response), true);
-
-        // dd([
-        //     'raw_ai_response' => $response,
-        //     'decoded_data'    => $data,
-        //     'sql'             => $data['sql'] ?? null,
-        //     'explanation'     => $data['explanation'] ?? null,
-        // ]);
 
         // ✅ Handle NOT_ALLOWED
         if ($sql === 'NOT_ALLOWED') {
@@ -135,25 +143,29 @@ class AIController extends Controller
             ], 500);
         }
 
-        // ✅ Aggregate Detection
+        // ✅ Normalize response
+        $responseData = [
+            'sql'         => $sql,
+            'explanation' => $explanation,
+        ];
+        
+
+
+        
+
         if (count($result) === 1 && count((array) $result[0]) === 1) {
-
-            $value = array_values((array) $result[0])[0];
-
-            return response()->json([
-                'sql'         => $sql,
-                'type'        => 'aggregate',
-                'value'       => $value,
-                'explanation' => $explanation,
-            ]);
+            // Single aggregate
+            $responseData['type']  = 'aggregate';
+            $responseData['value'] = array_values((array) $result[0])[0];
+        } else {
+            // Table result
+            $responseData['type'] = 'table';
+            $responseData['data'] = $result;
         }
 
-        // ✅ Table Result
-        return response()->json([
-            'sql'         => $sql,
-            'type'        => 'table',
-            'data'        => $result,
-            'explanation' => $explanation,
-        ]);
+        // ✅ Cache for 1 hour
+        Cache::put($cacheKey, $responseData, now()->addHour());
+
+        return response()->json($responseData);
     }
 }

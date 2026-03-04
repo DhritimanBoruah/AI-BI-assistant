@@ -243,66 +243,74 @@
     }
 
     function renderBusinessData(data) {
-        const content = document.getElementById('ai-content');
-        let html = '';
+    const content = document.getElementById('ai-content');
+    let html = '';
 
-        if (data.error) {
-            html = `<div class="p-8 bg-red-50 border border-red-100 rounded-[2rem] text-red-700 flex gap-5 italic font-medium"><i class="fas fa-triangle-exclamation mt-1"></i>${data.error}</div>`;
-        } else {
-            // AI Narrative
+    // Normalize cached vs fresh response
+    const aiData = data.data ? data.data : data;
+
+    if (aiData.error) {
+        html = `<div class="p-8 bg-red-50 border border-red-100 rounded-[2rem] text-red-700 flex gap-5 italic font-medium">
+                    <i class="fas fa-triangle-exclamation mt-1"></i>${aiData.error}
+                </div>`;
+    } else {
+        // AI Narrative
+        html += `
+        <div class="flex gap-6">
+            <div class="w-14 h-14 bg-indigo-600 rounded-2xl flex-shrink-0 flex items-center justify-center text-white shadow-xl shadow-indigo-200">
+                <i class="fas fa-message-sparkles text-xl"></i>
+            </div>
+            <div class="bg-white p-8 rounded-[0.5rem_2rem_2rem_2rem] border border-slate-100 shadow-sm flex-1">
+                <span class="text-[10px] font-black text-indigo-500 uppercase tracking-[0.2em] mb-3 block">AI Summary</span>
+                <p class="text-lg font-semibold text-slate-700 leading-relaxed italic">"${aiData.explanation}"</p>
+            </div>
+        </div>`;
+
+        // Visualization
+        if (aiData.type === 'aggregate') {
             html += `
-            <div class="flex gap-6">
-                <div class="w-14 h-14 bg-indigo-600 rounded-2xl flex-shrink-0 flex items-center justify-center text-white shadow-xl shadow-indigo-200">
-                    <i class="fas fa-message-sparkles text-xl"></i>
-                </div>
-                <div class="bg-white p-8 rounded-[0.5rem_2rem_2rem_2rem] border border-slate-100 shadow-sm flex-1">
-                    <span class="text-[10px] font-black text-indigo-500 uppercase tracking-[0.2em] mb-3 block">AI Summary</span>
-                    <p class="text-lg font-semibold text-slate-700 leading-relaxed italic">"${data.explanation}"</p>
+            <div class="bg-slate-900 p-12 rounded-[3rem] text-center border-b-8 border-blue-600">
+                <p class="text-[11px] font-black text-slate-500 uppercase tracking-[0.3em] mb-4">Core Metric Result</p>
+                <h3 class="text-7xl font-black text-white tracking-tighter">${aiData.value}</h3>
+                <div class="mt-6 inline-flex items-center gap-2 text-blue-400 text-xs font-bold px-4 py-2 bg-blue-400/10 rounded-full border border-blue-400/20">
+                    <i class="fas fa-check-double"></i> VERIFIED BY AI ENGINE
                 </div>
             </div>`;
-
-            // Visualization
-            if (data.type === 'aggregate') {
-                html += `
-                <div class="bg-slate-900 p-12 rounded-[3rem] text-center border-b-8 border-blue-600">
-                    <p class="text-[11px] font-black text-slate-500 uppercase tracking-[0.3em] mb-4">Core Metric Result</p>
-                    <h3 class="text-7xl font-black text-white tracking-tighter">${data.value}</h3>
-                    <div class="mt-6 inline-flex items-center gap-2 text-blue-400 text-xs font-bold px-4 py-2 bg-blue-400/10 rounded-full border border-blue-400/20">
-                        <i class="fas fa-check-double"></i> VERIFIED BY AI ENGINE
-                    </div>
-                </div>`;
-            }
-
-            if (data.type === 'table') {
-                html += `
-                <div class="space-y-4">
-                    <div class="flex items-center justify-between px-2">
-                        <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Enterprise Dataset</h4>
-                        <button onclick="window.print()" class="text-[10px] font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-lg hover:bg-blue-100 transition-colors">EXPORT TO PDF</button>
-                    </div>
-                    <div class="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-xl">
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-left">
-                                <thead>
-                                    <tr class="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-[0.1em]">
-                                        ${Object.keys(data.data[0]).map(key => `<th class="px-8 py-5">${key.replace(/_/g, ' ')}</th>`).join('')}
-                                    </tr>
-                                </thead>
-                                <tbody class="divide-y divide-slate-100">
-                                    ${data.data.map(row => `
-                                        <tr class="hover:bg-blue-50/40 transition-colors group">
-                                            ${Object.values(row).map(val => `<td class="px-8 py-5 text-sm font-bold text-slate-600 group-hover:text-blue-700">${val ?? '—'}</td>`).join('')}
-                                        </tr>
-                                    `).join('')}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>`;
-            }
         }
-        content.innerHTML = html;
+
+        if (aiData.type === 'table') {
+            html += `
+            <div class="space-y-4">
+                <div class="flex items-center justify-between px-2">
+                    <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Enterprise Dataset</h4>
+                    <button onclick="window.print()" class="text-[10px] font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-lg hover:bg-blue-100 transition-colors">EXPORT TO PDF</button>
+                </div>
+                <div class="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-xl">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left">
+                            <thead>
+                                <tr class="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-[0.1em]">
+                                    ${Object.keys(aiData.data[0]).map(key => `<th class="px-8 py-5">${key.replace(/_/g, ' ')}</th>`).join('')}
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                ${aiData.data.map(row => `
+                                    <tr class="hover:bg-blue-50/40 transition-colors group">
+                                        ${Object.values(row).map(val => `<td class="px-8 py-5 text-sm font-bold text-slate-600 group-hover:text-blue-700">${val ?? '—'}</td>`).join('')}
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>`;
+        }
     }
+
+    content.innerHTML = html;
+}
+
+
     </script>
 </body>
 </html>
