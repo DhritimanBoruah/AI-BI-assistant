@@ -18,6 +18,8 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
     Route::post('/ask-ai', [AIController::class, 'ask']);
+    Route::get('/ai-history', [AIController::class, 'getHistory']);
+    Route::get('/ai-suggestions', [AIController::class, 'getSuggestions']);
 });
 
 
